@@ -1033,22 +1033,11 @@ func (e *etcdClient) statusChecker() {
 	defer statusTimerDone()
 
 	for {
+		var quorumError error
 		newStatus := []string{}
 		ok := 0
 
-		quorumError := e.isConnectedAndHasQuorum(ctx)
-
-		endpoints := e.client.Endpoints()
-		for _, ep := range endpoints {
-			st, err := e.determineEndpointStatus(ctx, ep)
-			if err == nil {
-				ok++
-			}
-
-			newStatus = append(newStatus, st)
-		}
-
-		allConnected := len(endpoints) == ok
+		quorumError = e.isConnectedAndHasQuorum(ctx)
 
 		e.RWMutex.RLock()
 		lastHeartbeat := e.lastHeartbeat
@@ -1058,6 +1047,26 @@ func (e *etcdClient) statusChecker() {
 			recordQuorumError("no event received")
 			quorumError = fmt.Errorf("%s since last heartbeat update has been received", heartbeatDelta)
 		}
+
+		endpoints := e.client.Endpoints()
+		if e.extraOptions != nil && e.extraOptions.NoEndpointStatusChecks {
+			newStatus = append(newStatus, "endpoint status checks are disabled")
+
+			if quorumError == nil {
+				ok = len(endpoints)
+			}
+		} else {
+			for _, ep := range endpoints {
+				st, err := e.determineEndpointStatus(ctx, ep)
+				if err == nil {
+					ok++
+				}
+
+				newStatus = append(newStatus, st)
+			}
+		}
+
+		allConnected := len(endpoints) == ok
 
 		quorumString := "true"
 		if quorumError != nil {
